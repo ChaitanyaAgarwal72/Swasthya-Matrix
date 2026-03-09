@@ -1,0 +1,1 @@
+{"class":"org.apache.spark.ml.feature.MinMaxScalerModel","timestamp":1772292966563,"sparkVersion":"4.0.2","uid":"MinMaxScaler_f169e3180f70","paramMap":{"outputCol":"final_vulnerability_vec","inputCol":"raw_score_vec","max":100.0,"min":1.0},"defaultParamMap":{"outputCol":"MinMaxScaler_f169e3180f70__output","max":1.0,"min":0.0}}

@@ -3,3 +3,6 @@ pandas
 numpy
 matplotlib
 seaborn
+pyspark
+kafka-python
+hdfs
