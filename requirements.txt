@@ -6,3 +6,5 @@ seaborn
 pyspark
 kafka-python
 hdfs
+google-genai
+python-dotenv

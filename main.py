@@ -2,6 +2,18 @@ import subprocess
 import time
 import sys
 import os
+import shutil
+
+output_sink_path = "output_sink"
+if os.path.exists(output_sink_path):
+    for item in os.listdir(output_sink_path):
+        item_path = os.path.join(output_sink_path, item)
+        if os.path.isfile(item_path):
+            os.remove(item_path)
+        elif os.path.isdir(item_path):
+            shutil.rmtree(item_path)
+else:
+    os.makedirs(output_sink_path)
 
 print("1. Starting Big Data Infrastructure (Kafka, Zookeeper, Hadoop)...")
 subprocess.run(["docker-compose", "up", "-d"])
