@@ -21,11 +21,16 @@ PySpark Structured Streaming Consumer
         ├─ PCA (k=1) → raw vulnerability score
         └─ MinMaxScaler (1–100, inverted) → Vulnerability Score
         │
-        ├─ output_sink/latest_predictions.csv  (live dashboard feed)
-        └─ HDFS /swasthya_data/predictions/    (batch archive)
+        ├─ output_sink/latest_predictions.csv   (live dashboard feed)
+        └─ HDFS /swasthya_data/predictions/     (batch archive)
                 │
                 ▼
         Streamlit Dashboard (app/dashboard.py)
+                │
+                ├─ High Risk detection (Severity = 2)
+                ├─ Metric lookup from data/cleaned_data_hmis.csv
+                ├─ Gemini API call via scripts/llm_insights.py
+                └─ GenAI Emergency Insights panel (cached 1 hour)
 ```
 
 ---
@@ -62,10 +67,11 @@ Swasthya-Matrix/
 │
 ├── scripts/
 │   ├── kafka_producer.py            # Streams synthetic_kafka_stream.csv into Kafka
-│   └── spark_consumer.py           # PySpark streaming consumer + ML pipeline
+│   ├── spark_consumer.py            # PySpark streaming consumer + ML pipeline
+│   └── llm_insights.py              # Gemini client wrapper for emergency insights
 │
 └── output_sink/
-    └── latest_predictions.csv       # Written by Spark after each batch
+        └── latest_predictions.csv       # Recreated by Spark after startup cleanup
 ```
 
 ---
@@ -117,14 +123,15 @@ python main.py
 ```
 
 `main.py` will:
-1. Start Docker containers (Zookeeper, Kafka, Hadoop)
-2. Reset the Kafka topic (clears previous run's data)
-3. Create HDFS directories
-4. Start the PySpark consumer and wait for models to load
-5. Start the Kafka producer (streams 180 days of data, 1 day/sec)
-6. Launch the Streamlit dashboard at `http://localhost:8501`
-7. Print "Data stream complete" when all data is sent — dashboard stays live
-8. Press **Ctrl+C** to gracefully shut everything down
+1. Clear `output_sink/` to start with a fresh run
+2. Start Docker containers (Zookeeper, Kafka, Hadoop)
+3. Reset the Kafka topic (clears previous run's data)
+4. Create HDFS directories
+5. Start the PySpark consumer and wait for models to load
+6. Start the Kafka producer (streams 180 days of data, 1 day/sec)
+7. Launch the Streamlit dashboard at `http://localhost:8501`
+8. Print "Data stream complete" when all data is sent; dashboard stays live
+9. Press **Ctrl+C** to gracefully shut everything down
 
 ---
 
@@ -138,6 +145,7 @@ The Streamlit dashboard at `http://localhost:8501` shows:
 - **Live Predictions Table:** Location, colour-coded Severity (🔴 High / 🟠 Moderate / 🟢 Low), Vulnerability Score
 - **Risk Level Distribution:** count of states per severity bucket
 - **Top 10 Most Vulnerable Regions:** focused bar chart
+- **GenAI Emergency Insights:** per-region emergency recommendations for High Risk locations
 
 Dashboard refreshes every second; stable predictions appear after ~30 seconds per window (one simulated month).
 
@@ -149,6 +157,79 @@ The Hadoop NameNode web UI is available at **`http://localhost:9870`** while Doc
 
 - Browse files: Utilities → Browse the file system → `/swasthya_data/predictions/`
 - Each batch is written as a separate CSV partition under `batch_<id>/`
+
+---
+
+## 🤖 GenAI Emergency Insights
+
+### Overview
+
+The dashboard includes AI-powered insights for high-risk regions using **Google's Gemini API**. When any region is flagged as High Risk (Severity_Level = 2), an automated analysis is triggered to:
+
+1. Extract live health metrics from that region
+2. Send them to Gemini API with a prompt asking for actionable emergency recommendations
+3. Display the AI-generated insights directly in the dashboard
+
+### Features
+
+- **Automated Analysis:** Triggered only when High Risk regions are detected
+- **Real Health Data:** Uses actual HMIS metrics (ANC, immunization, maternal deaths, etc.)
+- **Actionable Insights:** 2-sentence emergency response recommendations pinpointing root causes
+- **Smart Caching:** Results cached for 1 hour to reduce API calls
+- **Graceful Fallback:** If API is unavailable, displays a user-friendly message
+
+### Configuration
+
+1. **Get a Gemini API key:**
+   - Visit [Google AI Studio](https://aistudio.google.com/apikey)
+   - Click "Get API Key" → "Create API Key in new project"
+   - Copy your key
+
+2. **Add to `.env` file:**
+   ```
+   GEMINI_API_KEY=your_actual_gemini_api_key_here
+   ```
+
+3. The dashboard will automatically load the API key from `.env` on startup
+
+### Example Output
+
+When a high-risk region is detected, you'll see:
+
+```
+🤖 GenAI Emergency Insights
+
+ℹ️ 2019-04-14 05:30:00 | A & N Islands (Rural) (Score: 85.42)
+
+High rates of infant sepsis (2 cases) and low institutional delivery 
+coverage (307/1000) indicate inadequate perinatal care infrastructure. 
+Recommend immediate deployment of maternal health workers and sepsis 
+screening protocols at primary health centers.
+```
+
+### Health Metrics Analyzed
+
+The AI analyzes the following 16 key health indicators:
+- **Maternal Health:** ANC Registered, Institutional Delivery, Maternal Death (Bleeding)
+- **Child Health:** Child Diarrhea, Child TB, Child Malaria, Immunization MR, Infant Death (Sepsis), Low Birth Weight
+- **Reproductive Health:** C-Section, Early Breastfeeding, PW Hypertension, Severe Anaemia Treated, Condoms Distributed
+- **Adult Health:** Adult Death (TB), Adult Suicide
+
+### How It Works
+
+1. After each 30-day prediction window, the ML pipeline identifies High Risk regions
+2. The dashboard loads source data from `data/cleaned_data_hmis.csv`
+3. For each high-risk region, metrics are matched by State + Region Type
+4. Metrics are formatted and sent to Gemini API with a public health analysis prompt
+5. AI response is cached and displayed in an info card
+
+### Troubleshooting
+
+| Issue | Solution |
+|-------|----------|
+| "API Key not found" | Ensure `.env` file exists with valid `GEMINI_API_KEY` |
+| "AI Insight temporarily unavailable" | API rate limit exceeded or network issue; try again in a moment |
+| No metrics displayed | Source data (`data/cleaned_data_hmis.csv`) may be missing or region type mismatch |
 
 ---
 
