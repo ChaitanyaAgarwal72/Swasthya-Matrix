@@ -1,6 +1,6 @@
 from pyspark.sql import SparkSession
 from pyspark.sql.types import StructType, StructField, StringType, DoubleType
-from pyspark.sql.functions import from_json, col, window, sum as _sum, to_timestamp, lit
+from pyspark.sql.functions import from_json, col, sum as _sum, to_timestamp, lit, year, month, last_day
 from pyspark.ml.classification import RandomForestClassificationModel
 from pyspark.ml.feature import StandardScalerModel, MinMaxScalerModel, PCAModel, VectorAssembler
 import os
@@ -59,10 +59,14 @@ parsed_stream = kafka_stream.select(
 ).select("data.*")
 
 parsed_stream = parsed_stream.withColumn("timestamp", to_timestamp(col("Date"), "dd-MM-yyyy"))
+parsed_stream = parsed_stream.withColumn("Year", year(col("timestamp"))) \
+    .withColumn("Month", month(col("timestamp"))) \
+    .withColumn("Month_Ending", last_day(col("timestamp")))
 
-aggregated_stream = parsed_stream.withWatermark("timestamp", "2 days") \
-    .groupBy(
-        window(col("timestamp"), "30 days"),
+aggregated_stream = parsed_stream.groupBy(
+        col("Year"),
+        col("Month"),
+        col("Month_Ending"),
         col("State"),
         col("Region_Index")
     ).agg(
@@ -120,14 +124,13 @@ def process_batch(df_batch, batch_id):
         df_final_output = df_final_score.withColumn("Vulnerability_Score", lit(101.0) - vector_to_array("final_vulnerability_vec")[0])
         
         pandas_df = df_final_output.select(
-            col("window.end"), col("State"), col("Region_Index"),
+            col("Month_Ending"), col("State"), col("Region_Index"),
             col("Severity_Level"),
             col("Vulnerability_Score")
         ).toPandas()
 
         pandas_df['Region'] = pandas_df['Region_Index'].map({0.0: 'Rural', 1.0: 'Urban'})
         pandas_df['Location'] = pandas_df['State'] + " (" + pandas_df['Region'] + ")"
-        pandas_df = pandas_df.rename(columns={'end': 'Month_Ending'})
 
         pandas_df = pandas_df.sort_values('Month_Ending').groupby(['State', 'Region_Index']).last().reset_index()
 
@@ -138,7 +141,7 @@ def process_batch(df_batch, batch_id):
         try:
             hdfs_path = f"hdfs://localhost:9000/swasthya_data/predictions/batch_{batch_id}"
             df_final_output.select(
-                col("window.end"), col("State"), col("Region_Index"),
+                col("Month_Ending"), col("State"), col("Region_Index"),
                 col("Severity_Level"), col("Vulnerability_Score")
             ).write.mode("overwrite").csv(hdfs_path, header=True)
             print(f"Batch {batch_id}: also written to HDFS.")

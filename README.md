@@ -13,7 +13,7 @@ Kafka Topic (health-stream)
         │  (71 records/day, 1 day/sec)
         ▼
 PySpark Structured Streaming Consumer
-        │  30-day tumbling window → sum → monthly-scale features
+        │  Calendar-month aggregation (28/29/30/31 days) → monthly-scale features
         │
         ├─ StandardScaler (KMeans features)
         ├─ RandomForest Classifier → Severity Level (0/1/2)
@@ -78,7 +78,7 @@ Swasthya-Matrix/
 
 ## ML Pipeline
 
-The pipeline runs inside `spark_consumer.py` on each 30-day windowed batch:
+The pipeline runs inside `spark_consumer.py` on each calendar-month batch:
 
 | Step | Model | Input → Output |
 |---|---|---|
@@ -147,7 +147,7 @@ The Streamlit dashboard at `http://localhost:8501` shows:
 - **Top 10 Most Vulnerable Regions:** focused bar chart
 - **GenAI Emergency Insights:** per-region emergency recommendations for High Risk locations
 
-Dashboard refreshes every second; stable predictions appear after ~30 seconds per window (one simulated month).
+Dashboard refreshes every second; stable predictions appear after enough daily records accumulate for a month (one simulated month).
 
 ---
 
@@ -217,7 +217,7 @@ The AI analyzes the following 16 key health indicators:
 
 ### How It Works
 
-1. After each 30-day prediction window, the ML pipeline identifies High Risk regions
+1. After each calendar-month prediction batch, the ML pipeline identifies High Risk regions
 2. The dashboard loads source data from `data/cleaned_data_hmis.csv`
 3. For each high-risk region, metrics are matched by State + Region Type
 4. Metrics are formatted and sent to Gemini API with a public health analysis prompt
@@ -236,4 +236,4 @@ The AI analyzes the following 16 key health indicators:
 ## Data Notes
 
 - **Training data** (`cleaned_data_hmis.csv`): real HMIS monthly aggregates per state/region
-- **Streaming data** (`synthetic_kafka_stream.csv`): synthetically generated daily records where each value = `monthly_value / days_in_month` (integer). Summing a full 30-day window reproduces the monthly magnitude that the models were trained on.
+- **Streaming data** (`synthetic_kafka_stream.csv`): synthetically generated daily records where each value = `monthly_value / days_in_month` (integer). Summing all daily records within each calendar month reproduces the monthly magnitude that the models were trained on.
